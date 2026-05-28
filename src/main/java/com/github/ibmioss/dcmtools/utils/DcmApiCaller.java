@@ -52,12 +52,14 @@ public class DcmApiCaller implements Closeable {
         parameterList[0] = new ProgramParameter(new AS400Text(_appId.length()).toBytes(_appId));
         // 2 Length of application ID Input Binary(4)
         parameterList[1] = new ProgramParameter(new AS400Bin4().toBytes(_appId.length()));
+        parameterList[1].setParameterType(ProgramParameter.PASS_BY_VALUE);
         // 3 Trusted CA certificate ID type Input Char(1)
         parameterList[2] = new ProgramParameter(new AS400Text(1).toBytes("1"));
         // 4 Trusted CA certificate ID Input Char(*)
         parameterList[3] = new ProgramParameter(new AS400Text(_alias.length()).toBytes(_alias));
         // 5 Length of trusted CA certificate ID Input Binary(4)
         parameterList[4] = new ProgramParameter(new AS400Bin4().toBytes(_alias.length()));
+        parameterList[4].setParameterType(ProgramParameter.PASS_BY_VALUE);
         // 6 Error code I/O Char(*)
         final ErrorCodeParameter ec = new ErrorCodeParameter(true, true);
         parameterList[5] = ec;
@@ -77,14 +79,17 @@ public class DcmApiCaller implements Closeable {
         parameterList[0] = new ProgramParameter(new AS400Text(_appId.length()).toBytes(_appId));
         // 2 Length of application ID Input Binary(4)
         parameterList[1] = new ProgramParameter(new AS400Bin4().toBytes(_appId.length()));
+        parameterList[1].setParameterType(ProgramParameter.PASS_BY_VALUE);
         // 3 Certificate store name Input Char(*)
         parameterList[2] = new ProgramParameter(new AS400Text(_dcmStore.length()).toBytes(_dcmStore));
         // 4 Length of certificate store name Input Binary(4)
         parameterList[3] = new ProgramParameter(new AS400Bin4().toBytes(_dcmStore.length()));
+        parameterList[3].setParameterType(ProgramParameter.PASS_BY_VALUE);
         // 5 Certificate ID Input Char(*)
         parameterList[4] = new ProgramParameter(new AS400Text(_alias.length()).toBytes(_alias));
         // 6 Length of certificate ID Input Binary(4)
         parameterList[5] = new ProgramParameter(new AS400Bin4().toBytes(_alias.length()));
+        parameterList[5].setParameterType(ProgramParameter.PASS_BY_VALUE);
         // 7 Error code I/O Char(*)
         final ErrorCodeParameter ec = new ErrorCodeParameter(true, true);
         parameterList[6] = ec;
@@ -136,21 +141,23 @@ public class DcmApiCaller implements Closeable {
         final ServiceProgramCall program = new ServiceProgramCall(m_conn);
         final String programName = "/QSYS.LIB/QICSS.LIB/QYCDCUSG.SRVPGM";
         final ProgramParameter[] parameterList = new ProgramParameter[8];
-        // 1 Application ID Output Char(*)
+        // 1 Application ID Input Char(*)
         parameterList[0] = new ProgramParameter(new AS400Text(_appId.length()).toBytes(_appId));
-        parameterList[0].setParameterType(ProgramParameter.PASS_BY_REFERENCE);
         // 2 Length of application ID Input Binary(4)
         parameterList[1] = new ProgramParameter(new AS400Bin4().toBytes(_appId.length()));
+        parameterList[1].setParameterType(ProgramParameter.PASS_BY_VALUE);
         // 3 Certificate store name Input Char(*)
         parameterList[2] = new ProgramParameter(new AS400Text(_certStoreName.length()).toBytes(_certStoreName));
         // 4 Length of certificate store name Input Binary(4)
         parameterList[3] = new ProgramParameter(new AS400Bin4().toBytes(_certStoreName.length()));
-        // 5 Certificate ID type Input Char(*)
+        parameterList[3].setParameterType(ProgramParameter.PASS_BY_VALUE);
+        // 5 Certificate ID type Input Char(1)
         parameterList[4] = new ProgramParameter(new AS400Text(1).toBytes("1"));
         // 6 Certificate ID Input Char(*)
         parameterList[5] = new ProgramParameter(new AS400Text(_certId.length()).toBytes(_certId));
         // 7 Length of certificate ID Input Binary(4)
         parameterList[6] = new ProgramParameter(new AS400Bin4().toBytes(_certId.length()));
+        parameterList[6].setParameterType(ProgramParameter.PASS_BY_VALUE);
         // 8 Error code I/O Char(*)
         final ErrorCodeParameter ec = new ErrorCodeParameter(true, true);
         parameterList[7] = ec;

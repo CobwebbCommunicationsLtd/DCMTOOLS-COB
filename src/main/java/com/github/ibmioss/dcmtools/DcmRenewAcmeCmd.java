@@ -3,6 +3,7 @@ package com.github.ibmioss.dcmtools;
 import java.util.LinkedList;
 import java.util.List;
 
+import com.github.ibmioss.dcmtools.CertFileImporter.ImportOptions;
 import com.github.ibmioss.dcmtools.utils.TempFileManager;
 import com.github.theprez.jcmdutils.AppLogger;
 import com.github.theprez.jcmdutils.ProcessLauncher;
@@ -19,8 +20,7 @@ public class DcmRenewAcmeCmd {
 
     public static void main(final String... _args) {
         final List<String> domains = new LinkedList<String>();
-        final DcmUserOpts opts = new DcmUserOpts() {
-        };
+        final ImportOptions opts = new ImportOptions();
         for (final String arg : _args) {
             if ("-y".equals(arg)) {
                 opts.setYesMode(true);

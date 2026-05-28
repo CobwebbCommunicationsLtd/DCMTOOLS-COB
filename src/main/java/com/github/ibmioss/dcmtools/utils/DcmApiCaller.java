@@ -65,6 +65,7 @@ public class DcmApiCaller implements Closeable {
         parameterList[4].setParameterType(ProgramParameter.PASS_BY_REFERENCE);
         // 6 Error code I/O Char(*)
         final ErrorCodeParameter ec = new ErrorCodeParameter(true, true);
+        ec.setParameterType(ProgramParameter.PASS_BY_REFERENCE);
         parameterList[5] = ec;
 
         program.setProgram(programName, parameterList);
@@ -98,6 +99,7 @@ public class DcmApiCaller implements Closeable {
         parameterList[5].setParameterType(ProgramParameter.PASS_BY_REFERENCE);
         // 7 Error code I/O Char(*)
         final ErrorCodeParameter ec = new ErrorCodeParameter(true, true);
+        ec.setParameterType(ProgramParameter.PASS_BY_REFERENCE);
         parameterList[6] = ec;
 
         program.setProgram(programName, parameterList);
@@ -170,6 +172,7 @@ public class DcmApiCaller implements Closeable {
         parameterList[6].setParameterType(ProgramParameter.PASS_BY_REFERENCE);
         // 8 Error code I/O Char(*)
         final ErrorCodeParameter ec = new ErrorCodeParameter(true, true);
+        ec.setParameterType(ProgramParameter.PASS_BY_REFERENCE);
         parameterList[7] = ec;
 
         program.setProgram(programName, parameterList);

@@ -28,6 +28,22 @@ public class DcmRenewCmd {
                 printUsageAndExit();
             } else if ("--ca-only".equals(arg)) {
                 opts.setCasOnly(true);
+            } else if (arg.startsWith("--password=")) {
+                opts.setPasswordProtected(true);
+                opts.setPassword(DcmUserOpts.extractValue(arg));
+            } else if ("--password".equals(arg)) {
+                opts.setPasswordProtected(true);
+            } else if (arg.startsWith("--dcm-store=")) {
+                final String target = DcmUserOpts.extractValue(arg);
+                if ("system".equalsIgnoreCase(target) || "*system".equalsIgnoreCase(target)) {
+                    opts.setDcmStore(DcmUserOpts.SYSTEM_DCM_STORE);
+                } else {
+                    opts.setDcmStore(target);
+                }
+            } else if (arg.startsWith("--dcm-password=")) {
+                opts.setDcmPassword(DcmUserOpts.extractValue(arg));
+            } else if (arg.startsWith("--cert=")) {
+                opts.setLabel(DcmUserOpts.extractValue(arg));
             } else if (arg.startsWith("-")) {
                 System.err.println(StringUtils.colorizeForTerminal("ERROR: Unknown option '" + arg + "'", TerminalColor.BRIGHT_RED));
                 printUsageAndExit();
@@ -57,10 +73,17 @@ public class DcmRenewCmd {
 
     private static void printUsageAndExit() {
         // @formatter:off
-		final String usage = "Usage: dcmrenew [[filename] ..]\n"
+		final String usage = "Usage: dcmrenew [options] <filename> [<filename> ...]\n"
+		                        + "\n"
+		                        + "    Renews (overwrites) an existing certificate in DCM with a new one\n"
+		                        + "    from the given file. The private key already stored in DCM is kept.\n"
 		                        + "\n"
 		                        + "    Valid options include:\n"
                                 + "        -y:                            Do not ask for confirmation\n"
+                                + "        --password[=password]:         Input file is password-protected (e.g. PFX)\n"
+                                + "        --cert=<id>:                   Certificate ID to use when renewing\n"
+                                + "        --dcm-store=<system/filename>: Specify the target DCM store (default: *SYSTEM)\n"
+                                + "        --dcm-password=<password>:     DCM keystore password\n"
                                 ;
 		// @formatter:on
         System.err.println(usage);

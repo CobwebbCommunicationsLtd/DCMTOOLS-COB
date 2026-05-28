@@ -1,24 +1,25 @@
 package com.github.ibmioss.dcmtools;
 
 import java.beans.PropertyVetoException;
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.cert.Certificate;
-import java.security.cert.CertificateEncodingException;
 import java.security.cert.CertificateException;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 
+import com.github.ibmioss.dcmtools.CertFileImporter.ImportOptions;
+import com.github.ibmioss.dcmtools.utils.CertUtils;
 import com.github.ibmioss.dcmtools.utils.DcmApiCaller;
 import com.github.ibmioss.dcmtools.utils.KeyStoreLoader;
 import com.github.ibmioss.dcmtools.utils.TempFileManager;
 import com.github.theprez.jcmdutils.AppLogger;
+import com.github.theprez.jcmdutils.ConsoleQuestionAsker;
+import com.github.theprez.jcmdutils.StringUtils;
+import com.github.theprez.jcmdutils.StringUtils.TerminalColor;
 import com.ibm.as400.access.AS400SecurityException;
 import com.ibm.as400.access.ErrorCompletingRequestException;
 import com.ibm.as400.access.ObjectDoesNotExistException;
@@ -34,23 +35,35 @@ public class CertRenewer {
         }
     }
 
-    public void doRenew(final AppLogger _logger, final DcmUserOpts _opts) throws KeyStoreException, IOException, NoSuchAlgorithmException, CertificateException, PropertyVetoException, AS400SecurityException, ErrorCompletingRequestException, InterruptedException, ObjectDoesNotExistException {
+    public void doRenew(final AppLogger _logger, final ImportOptions _opts) throws KeyStoreException, IOException, NoSuchAlgorithmException, CertificateException, PropertyVetoException, AS400SecurityException, ErrorCompletingRequestException, InterruptedException, ObjectDoesNotExistException {
 
         final boolean isYesMode = _opts.isYesMode();
-        // Initialize keystore from file of unknown type
-        final KeyStore keyStore = new KeyStoreLoader(_logger, m_fileNames, null, null, false).getKeyStore();
 
+        // Load the certificate file, supporting password-protected files and labels
+        final KeyStore keyStore = new KeyStoreLoader(_logger, m_fileNames, _opts.getPasswordOrNull(), _opts.getLabel(), _opts.isCasOnly()).getKeyStore();
+        _logger.println_success("Sanity check successful");
+
+        if (!keyStore.aliases().hasMoreElements()) {
+            throw new IOException("No certificates to renew");
+        }
+
+        // Show what will be renewed
+        _logger.println("The following certificates will be renewed in DCM:");
         for (final String alias : Collections.list(keyStore.aliases())) {
-            renewCert(_logger, keyStore.getCertificate(alias),_opts);
+            final Certificate cert = keyStore.getCertificate(alias);
+            _logger.println("    Certificate ID '" + alias + "':");
+            _logger.println(StringUtils.colorizeForTerminal(CertUtils.getCertInfoStr(cert, "        "), TerminalColor.CYAN));
         }
-    }
 
-    private void renewCert(final AppLogger _logger, final Certificate _cert, final DcmUserOpts _opts) throws CertificateEncodingException, FileNotFoundException, IOException, PropertyVetoException, AS400SecurityException, ErrorCompletingRequestException, InterruptedException, ObjectDoesNotExistException {
-        File tmpFile = TempFileManager.createTempFile();
-        try (FileOutputStream fos = new FileOutputStream(tmpFile)) {
-            fos.write(_cert.getEncoded());
+        final String reply = isYesMode ? "y" : ConsoleQuestionAsker.get().askUserWithDefault("Do you want to renew ALL of the above certificates in DCM? [y/N] ", "N");
+        if (!reply.toLowerCase().trim().startsWith("y")) {
+            throw new IOException("Renewal cancelled");
         }
-        new DcmApiCaller(_opts.isYesMode()).callQycdRenewCertificate_RNWC0300(_logger, tmpFile.getAbsolutePath());
-        tmpFile.delete();
+
+        // Convert to DCM API format and import, overwriting any existing entry
+        final String dcmImportFile = new KeyStoreLoader(keyStore).saveToDcmApiFormatFile(TempFileManager.TEMP_KEYSTORE_PWD);
+        try (DcmApiCaller caller = new DcmApiCaller(isYesMode)) {
+            caller.callQykmImportKeyStore(_logger, _opts.getDcmStore(), _opts.getDcmPassword(), dcmImportFile, TempFileManager.TEMP_KEYSTORE_PWD);
+        }
     }
 }

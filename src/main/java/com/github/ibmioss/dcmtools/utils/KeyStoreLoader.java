@@ -4,6 +4,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.security.Key;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
@@ -85,7 +86,7 @@ public class KeyStoreLoader {
                     continue;
                 }
                 if (null != fileKs) {
-                    keyStore = CertUtils.mergeKeyStore(keyStore, fileKs);
+                    keyStore = CertUtils.mergeKeyStore(keyStore, fileKs, null == _pw ? null : _pw.toCharArray());
                     isFileLoaded = true;
                     isKeyStoreLoaded = true;
                     break;
@@ -141,6 +142,16 @@ public class KeyStoreLoader {
         final KeyStore tgt = KeyStore.getInstance(PKCS_12);
         tgt.load(null, _pw.toCharArray());
         for (final String alias : Collections.list(keyStore.aliases())) {
+            if (keyStore.isKeyEntry(alias)) {
+                try {
+                    final Key key = keyStore.getKey(alias, TempFileManager.TEMP_KEYSTORE_PWD.toCharArray());
+                    final Certificate[] chain = keyStore.getCertificateChain(alias);
+                    if (key != null && chain != null) {
+                        tgt.setKeyEntry(alias, key, _pw.toCharArray(), chain);
+                        continue;
+                    }
+                } catch (final Exception e) { /* fall through to certificate-only entry */ }
+            }
             tgt.setCertificateEntry(alias, keyStore.getCertificate(alias));
         }
         try (FileOutputStream fos = new FileOutputStream(dcmFile, true)) {

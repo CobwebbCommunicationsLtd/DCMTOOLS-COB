@@ -24,12 +24,15 @@ public class DcmAssignCmd {
         }
 
         Set<String> getApps() throws IOException {
-            if (m_apps.isEmpty() && !isYesMode()) {
-                final String resp = ConsoleQuestionAsker.get().askUserOrThrow("Enter application ID: ");
-                m_apps.add(resp);
-                return m_apps;
+            if (m_apps.isEmpty()) {
+                if (!isYesMode()) {
+                    final String resp = ConsoleQuestionAsker.get().askUserOrThrow("Enter application ID: ");
+                    m_apps.add(resp);
+                    return m_apps;
+                }
+                throw new IOException("ERROR: Application ID is required");
             }
-            throw new IOException("ERROR: Application ID is required");
+            return m_apps;
         }
 
         Set<String> getAppsWithShorthandsProcessed() throws IOException {

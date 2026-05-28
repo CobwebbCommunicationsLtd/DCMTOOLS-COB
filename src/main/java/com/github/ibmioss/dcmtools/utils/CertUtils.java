@@ -4,6 +4,7 @@ import java.beans.PropertyVetoException;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.security.Key;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
@@ -100,7 +101,21 @@ public class CertUtils {
     }
 
     public static KeyStore mergeKeyStore(final KeyStore _dest, final KeyStore _src) throws KeyStoreException {
+        return mergeKeyStore(_dest, _src, null);
+    }
+
+    public static KeyStore mergeKeyStore(final KeyStore _dest, final KeyStore _src, final char[] _srcKeyPassword) throws KeyStoreException {
         for (final String alias : Collections.list(_src.aliases())) {
+            if (_src.isKeyEntry(alias)) {
+                try {
+                    final Key key = _src.getKey(alias, _srcKeyPassword);
+                    final Certificate[] chain = _src.getCertificateChain(alias);
+                    if (key != null && chain != null) {
+                        _dest.setKeyEntry(alias, key, TempFileManager.TEMP_KEYSTORE_PWD.toCharArray(), chain);
+                        continue;
+                    }
+                } catch (final Exception e) { /* fall through to certificate-only entry */ }
+            }
             _dest.setCertificateEntry(alias, _src.getCertificate(alias));
         }
         return _dest;

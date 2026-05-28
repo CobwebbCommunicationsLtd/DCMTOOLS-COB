@@ -110,7 +110,7 @@ public class DcmApiCaller implements Closeable {
                 new AS400Text(_file.length()) }); // TODO
 
         // Set up the parms
-        final ProgramParameter[] parameterList = new ProgramParameter[14];
+        final ProgramParameter[] parameterList = new ProgramParameter[4];
 
         // 1 Certificate request data Input Char(*)
         parameterList[0] = new ProgramParameter(arg0.toBytes(new Object[] { 8, _file.length(), _file }));

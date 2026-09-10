@@ -71,9 +71,26 @@ public class KeyStoreLoader {
 
         for (final String file : filesToLoad) {
             boolean isFileLoaded = false;
+            final File fileObj = new File(file);
 
             // skip directories and .zip files (we already added their contents to the main list)
-            if (new File(file).isDirectory() || file.toLowerCase().endsWith(".zip")) {
+            if (fileObj.isDirectory() || file.toLowerCase().endsWith(".zip")) {
+                continue;
+            }
+            // Report an unusable file for what it is. Everything below swallows its
+            // exceptions in order to try the next format, so without this check a
+            // mistyped path (or a '~' the shell never expanded) is indistinguishable
+            // from a file we genuinely cannot parse.
+            if (!fileObj.exists()) {
+                _logger.println_err("ERROR: File " + file + " does not exist");
+                continue;
+            }
+            if (!fileObj.isFile()) {
+                _logger.println_err("ERROR: " + file + " is not a regular file");
+                continue;
+            }
+            if (!fileObj.canRead()) {
+                _logger.println_err("ERROR: File " + file + " is not readable");
                 continue;
             }
             // Try to load as keystore file
@@ -87,12 +104,17 @@ public class KeyStoreLoader {
                 }
                 if (null != fileKs) {
                     keyStore = CertUtils.mergeKeyStore(keyStore, fileKs, null == _pw ? null : _pw.toCharArray());
+                    if (!StringUtils.isEmpty(_label)) {
+                        keyStore = CertUtils.relabelKeyStore(keyStore, _label.trim(), TempFileManager.TEMP_KEYSTORE_PWD.toCharArray());
+                    }
                     isFileLoaded = true;
                     isKeyStoreLoaded = true;
                     break;
                 }
             }
             // That didn't work! Try to load as a certificate file
+            Throwable certParseFailure = null;
+            int nonCaSkipped = 0;
             if (!isFileLoaded) {
                 try (FileInputStream fis = new FileInputStream(file)) {
                     final Collection<? extends Certificate> certs = CertificateFactory.getInstance("X.509").generateCertificates(fis);
@@ -100,9 +122,10 @@ public class KeyStoreLoader {
                         int counter = 1;
                         for (final Certificate cert : certs) {
                             if (_caOnly && !isCertCa(cert)) {
+                                nonCaSkipped++;
                                 continue;
                             }
-                            final String aliasBase = StringUtils.isEmpty(_label) ? new File(file).getName().replaceFirst("[.][^.]+$", "") : _label.trim();
+                            final String aliasBase = StringUtils.isEmpty(_label) ? fileObj.getName().replaceFirst("[.][^.]+$", "") : _label.trim();
                             final String aliasSuffix = (1 == counter) ? "" : "." + counter;
                             counter++;
                             final String alias = aliasBase + aliasSuffix;
@@ -111,10 +134,19 @@ public class KeyStoreLoader {
                         }
                     }
                 } catch (final Throwable e) {
+                    certParseFailure = e;
                 }
             }
             if (!isFileLoaded) {
-                _logger.println_warn("WARNING: File " + new File(file).getName() + " will not be processed. It is in an unsupported format");
+                if (0 < nonCaSkipped) {
+                    // The file parsed fine, it just held nothing we were asked to keep
+                    _logger.println_warn("WARNING: File " + fileObj.getName() + " will not be processed. It holds " + nonCaSkipped + " certificate(s), none of which are CA certificates");
+                } else {
+                    _logger.println_warn("WARNING: File " + fileObj.getName() + " will not be processed. It is in an unsupported format");
+                    if (null != certParseFailure) {
+                        _logger.printExceptionStack_verbose(certParseFailure);
+                    }
+                }
             }
         }
         // Out of ideas

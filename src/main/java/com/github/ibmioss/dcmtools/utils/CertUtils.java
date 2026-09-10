@@ -15,6 +15,7 @@ import java.security.cert.X509Certificate;
 import java.text.SimpleDateFormat;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
 
 import javax.security.auth.x500.X500Principal;
 
@@ -98,6 +99,32 @@ public class CertUtils {
             return false;
         }
         return -1 != ((X509Certificate) _cert).getBasicConstraints();
+    }
+
+    public static KeyStore relabelKeyStore(final KeyStore _ks, final String _label, final char[] _keyPassword) throws KeyStoreException {
+        final List<String> aliases = Collections.list(_ks.aliases());
+        int counter = 1;
+        for (final String alias : aliases) {
+            final String newAlias = (aliases.size() == 1 || counter == 1) ? _label : _label + "." + counter;
+            counter++;
+            if (alias.equals(newAlias)) {
+                continue;
+            }
+            if (_ks.isKeyEntry(alias)) {
+                try {
+                    final Key key = _ks.getKey(alias, _keyPassword);
+                    final Certificate[] chain = _ks.getCertificateChain(alias);
+                    if (key != null && chain != null) {
+                        _ks.setKeyEntry(newAlias, key, _keyPassword, chain);
+                        _ks.deleteEntry(alias);
+                        continue;
+                    }
+                } catch (final Exception e) { /* fall through */ }
+            }
+            _ks.setCertificateEntry(newAlias, _ks.getCertificate(alias));
+            _ks.deleteEntry(alias);
+        }
+        return _ks;
     }
 
     public static KeyStore mergeKeyStore(final KeyStore _dest, final KeyStore _src) throws KeyStoreException {

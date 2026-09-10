@@ -4,6 +4,7 @@ import java.beans.PropertyVetoException;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.math.BigInteger;
 import java.security.Key;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
@@ -144,6 +145,16 @@ public class CertRenewer {
         return _alias.replaceFirst("[.][0-9]+$", "");
     }
 
+    /**
+     * Renders a serial number the way DCM and openssl do. {@link BigInteger#toString(int)}
+     * drops the leading zero nibble of a serial whose first byte is below 0x10, which
+     * makes an otherwise identical serial look different from the one those tools report.
+     */
+    private static String formatSerial(final BigInteger _serial) {
+        final String hex = _serial.toString(16).toUpperCase();
+        return (0 == hex.length() % 2) ? hex : "0" + hex;
+    }
+
     private void validateRenewal(final KeyStore _dcm, final String _certId, final Certificate _newCert) throws KeyStoreException, IOException {
         if (!_dcm.containsAlias(_certId)) {
             throw new IOException("Certificate ID '" + _certId + "' does not exist in DCM. Use 'dcmimport' to add a new certificate, or --cert=<id> to name an existing one");
@@ -180,7 +191,7 @@ public class CertRenewer {
             }
             if (expected instanceof X509Certificate) {
                 final X509Certificate x = (X509Certificate) expected;
-                _logger.println_success("Certificate ID '" + certId + "' now holds serial " + x.getSerialNumber().toString(16).toUpperCase() + ", valid until " + x.getNotAfter());
+                _logger.println_success("Certificate ID '" + certId + "' now holds serial " + formatSerial(x.getSerialNumber()) + ", valid until " + x.getNotAfter());
             } else {
                 _logger.println_success("Certificate ID '" + certId + "' renewed");
             }

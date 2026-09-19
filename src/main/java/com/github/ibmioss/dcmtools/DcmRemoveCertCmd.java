@@ -72,6 +72,11 @@ public class DcmRemoveCertCmd {
                 ks.load(fis, opts.getDcmPassword().toCharArray());
             }
             ks.deleteEntry(opts.getLabel());
+            // UNSAFE for *SYSTEM: KeyStore.store() rewrites the store but does not
+            // maintain its password stash, so System SSL can no longer open it
+            // unattended afterward. No QYCD*/QYKM* API covers certificate deletion,
+            // so there's currently no safe alternative here -- see dcmrenew's use of
+            // QycdRenewCertificate (CertRenewer.java) for the pattern that does exist.
             try (FileOutputStream fos = new FileOutputStream(opts.getDcmStore())) {
                 ks.store(fos, opts.getDcmPassword().toCharArray());
             }

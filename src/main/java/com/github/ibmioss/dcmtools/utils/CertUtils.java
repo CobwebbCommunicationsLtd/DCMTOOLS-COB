@@ -3,6 +3,7 @@ package com.github.ibmioss.dcmtools.utils;
 import java.beans.PropertyVetoException;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.security.Key;
 import java.security.KeyStore;
@@ -73,6 +74,23 @@ public class CertUtils {
             apiCaller.callQykmExportKeyStore(_logger, _dcmStore, _dcmStorePw, dest.getAbsolutePath(), StringUtils.isEmpty(_pw) ?TempFileManager.TEMP_KEYSTORE_PWD: new String(_pw));
         }
         return dest;
+    }
+
+    /**
+     * Writes a certificate chain (leaf first, issuers after) as a PEM file, for
+     * handoff to a native DCM API that takes a certificate path/file rather than a
+     * Java KeyStore object.
+     */
+    public static File writeCertChainAsPem(final List<Certificate> _chain, final File _dest) throws IOException, CertificateEncodingException {
+        try (FileWriter writer = new FileWriter(_dest)) {
+            final java.util.Base64.Encoder encoder = java.util.Base64.getMimeEncoder(64, "\n".getBytes());
+            for (final Certificate cert : _chain) {
+                writer.write("-----BEGIN CERTIFICATE-----\n");
+                writer.write(encoder.encodeToString(cert.getEncoded()));
+                writer.write("\n-----END CERTIFICATE-----\n");
+            }
+        }
+        return _dest;
     }
 
     public static String getCertInfoStr(final Certificate _cert, final String _linePrefix) {

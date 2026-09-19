@@ -52,6 +52,14 @@ public class DcmChangePwCmd {
             try (FileInputStream fis = new FileInputStream(opts.getDcmStore())) {
                 ks.load(fis, opts.getDcmPassword().toCharArray());
             }
+            // UNSAFE for *SYSTEM: KeyStore.store() rewrites the store but does not
+            // maintain its password stash, so System SSL can no longer open it
+            // unattended afterward -- even though the very thing this command
+            // changes is the password the stash needs to match. No QYCD*/QYKM* API
+            // covers a store password change; the DCM *web interface* is the one
+            // path known to keep the store and stash in sync (Manage Certificate
+            // Store -> Change password), so prefer that over this command against
+            // *SYSTEM until a native alternative is found.
             try (FileOutputStream fos = new FileOutputStream(opts.getDcmStore())) {
                 ks.store(fos, opts.getPasswordOrThrow());
             }

@@ -97,6 +97,12 @@ public class DcmRenameCertCmd {
             final String newLabel = opts.getNewLabel();
             ks.deleteEntry(oldLabel);
             ks.setCertificateEntry(newLabel, cert);
+            // UNSAFE for *SYSTEM: KeyStore.store() rewrites the store but does not
+            // maintain its password stash, so System SSL can no longer open it
+            // unattended afterward. No QYCD*/QYKM* API covers relabeling a
+            // certificate, so there's currently no safe alternative here -- see
+            // dcmrenew's use of QycdRenewCertificate (CertRenewer.java) for the
+            // pattern that does exist.
             try (FileOutputStream fos = new FileOutputStream(opts.getDcmStore())) {
                 ks.store(fos, opts.getDcmPassword().toCharArray());
             }

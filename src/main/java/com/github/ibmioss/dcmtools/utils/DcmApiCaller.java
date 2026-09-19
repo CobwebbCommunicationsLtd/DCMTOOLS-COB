@@ -108,10 +108,23 @@ public class DcmApiCaller implements Closeable {
         runProgram(_logger, program, ec);
     }
 
+    /**
+     * Renews a certificate already in the *SYSTEM store, keeping its existing key
+     * pair, by importing a signed certificate for that same key pair from
+     * {@code _file} (a PEM file; the leaf certificate followed by its issuer
+     * chain). Unlike the KeyStore-based renewal path, this goes through IBM's own
+     * QycdRenewCertificate API rather than rewriting the store file directly, so
+     * it keeps the store's password stash in sync -- the caller needs *ALLOBJ and
+     * *SECADM special authority, not the store password, and this only targets
+     * *SYSTEM.
+     */
     public void callQycdRenewCertificate_RNWC0300(final AppLogger _logger, final String _file) throws PropertyVetoException, AS400SecurityException, ErrorCompletingRequestException, IOException, InterruptedException, ObjectDoesNotExistException {
-        final ProgramCall program = new ProgramCall(m_conn);
+        // Like the other QYCD* APIs (QycdUpdateCertUsage etc.), this is a service
+        // program under QICSS, not a plain *PGM under QSYS -- confirmed against
+        // /QSYS.LIB/QICSS.LIB/QYCDRNWC.SRVPGM on the actual box.
+        final ServiceProgramCall program = new ServiceProgramCall(m_conn);
         // Initialize the name of the program to run.
-        final String programName = "/QSYS.LIB/QYCDRNWC.PGM";
+        final String programName = "/QSYS.LIB/QICSS.LIB/QYCDRNWC.SRVPGM";
         final String apiFormat = "RNWC0300";
 
         final AS400Structure arg0 = new AS400Structure(new AS400DataType[] {
@@ -136,6 +149,7 @@ public class DcmApiCaller implements Closeable {
         parameterList[3] = ec;
 
         program.setProgram(programName, parameterList);
+        program.setProcedureName("QycdRenewCertificate");
         // Run the program.
         runProgram(_logger, program, ec);
     }

@@ -1,6 +1,7 @@
 package com.github.ibmioss.dcmtools;
 
 import java.beans.PropertyVetoException;
+import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -12,6 +13,7 @@ import java.security.NoSuchAlgorithmException;
 import java.security.PublicKey;
 import java.security.UnrecoverableKeyException;
 import java.security.cert.Certificate;
+import java.security.cert.CertificateEncodingException;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.util.Collections;
@@ -21,8 +23,11 @@ import java.util.List;
 import java.util.Map;
 
 import com.github.ibmioss.dcmtools.CertFileImporter.ImportOptions;
+import com.github.ibmioss.dcmtools.utils.CertUsageInfo;
 import com.github.ibmioss.dcmtools.utils.CertUtils;
+import com.github.ibmioss.dcmtools.utils.DcmApiCaller;
 import com.github.ibmioss.dcmtools.utils.KeyStoreLoader;
+import com.github.ibmioss.dcmtools.utils.TempFileManager;
 import com.github.theprez.jcmdutils.AppLogger;
 import com.github.theprez.jcmdutils.ConsoleQuestionAsker;
 import com.github.theprez.jcmdutils.StringUtils;
@@ -92,22 +97,95 @@ public class CertRenewer {
         }
 
         // Swap in the new certificate, keeping the private key that is already in DCM
-        for (final Map.Entry<String, List<Certificate>> renewal : renewals.entrySet()) {
+        final boolean isSystemStore = new File(dcmStore).getAbsolutePath().equals(new File(DcmUserOpts.SYSTEM_DCM_STORE).getAbsolutePath());
+
+        // A renewal that rewrites the store -- either path below -- can silently
+        // orphan the certificate-to-application assignments that host servers,
+        // Telnet, etc. depend on (independent of whatever happens to the *SYSTEM
+        // store's password stash). Snapshot who currently has this certificate ID
+        // assigned before touching anything, so it can be restored afterward no
+        // matter which renewal path actually runs.
+        final Map<String, List<String>> assignedAppsByCertId = new LinkedHashMap<String, List<String>>();
+        if (isSystemStore) {
+            for (final String certId : renewals.keySet()) {
+                try {
+                    assignedAppsByCertId.put(certId, CertUsageInfo.findApplicationsAssignedTo(certId));
+                } catch (final Exception e) {
+                    _logger.println_warn("Could not look up existing certificate-application assignments for '" + certId + "', so they cannot be restored after renewal: " + e.getLocalizedMessage());
+                }
+            }
+        }
+
+        boolean renewedNatively = false;
+        if (isSystemStore) {
+            // QycdRenewCertificate is IBM's native "renew" API: it runs under the
+            // caller's OS authority against *SYSTEM specifically, rather than
+            // rewriting the store file the way KeyStore.store() does below. Treated
+            // as best-effort: if it fails for any reason, fall back to the
+            // KeyStore-based rewrite, which is known to work.
+            try {
+                renewViaNativeApi(_logger, isYesMode, renewals);
+                renewedNatively = true;
+            } catch (final Exception e) {
+                _logger.println_warn("Native certificate renewal failed (" + e.getLocalizedMessage() + "); falling back to keystore-based renewal");
+            }
+        }
+        if (!renewedNatively) {
+            if (isSystemStore) {
+                _logger.println_warn("WARNING: renewing *SYSTEM via KeyStore.store() can orphan certificate-application assignments and/or the password stash; known assignments will be re-applied afterward.");
+            } else {
+                _logger.println_warn("WARNING: renewing a non-*SYSTEM store rewrites it with KeyStore.store(), which does not necessarily preserve any password stash associated with the store.");
+            }
+            renewViaKeyStoreRewrite(dcm, dcmPw, renewals, dcmStore);
+        }
+
+        if (isSystemStore) {
+            try (DcmApiCaller apiCaller = new DcmApiCaller(isYesMode)) {
+                for (final Map.Entry<String, List<String>> entry : assignedAppsByCertId.entrySet()) {
+                    for (final String appId : entry.getValue()) {
+                        apiCaller.callQycdUpdateCertUsage(_logger, appId, "*SYSTEM", entry.getKey());
+                        _logger.println_success("Restored certificate-application assignment: '" + entry.getKey() + "' -> " + appId);
+                    }
+                }
+            } catch (final Exception e) {
+                _logger.println_err("WARNING: failed to restore certificate-application assignments: " + e.getLocalizedMessage() + ". Check DCM (Application Definitions) manually before restarting any servers.");
+            }
+        }
+
+        verifyRenewalApplied(_logger, dcmStore, dcmPw, renewals);
+    }
+
+    /**
+     * Renews certificates in the *SYSTEM store through QycdRenewCertificate
+     * (format RNWC0300), instead of rewriting the store via the Java KeyStore
+     * API. See the note in {@link #doRenew} for why that distinction matters.
+     */
+    private void renewViaNativeApi(final AppLogger _logger, final boolean _isYesMode, final Map<String, List<Certificate>> _renewals)
+            throws IOException, CertificateEncodingException, PropertyVetoException, AS400SecurityException, ErrorCompletingRequestException, InterruptedException, ObjectDoesNotExistException {
+        try (DcmApiCaller apiCaller = new DcmApiCaller(_isYesMode)) {
+            for (final Map.Entry<String, List<Certificate>> renewal : _renewals.entrySet()) {
+                final File pemFile = TempFileManager.createTempFile();
+                CertUtils.writeCertChainAsPem(renewal.getValue(), pemFile);
+                apiCaller.callQycdRenewCertificate_RNWC0300(_logger, pemFile.getAbsolutePath());
+            }
+        }
+    }
+
+    private void renewViaKeyStoreRewrite(final KeyStore _dcm, final char[] _dcmPw, final Map<String, List<Certificate>> _renewals, final String _dcmStore) throws KeyStoreException, IOException, NoSuchAlgorithmException, CertificateException {
+        for (final Map.Entry<String, List<Certificate>> renewal : _renewals.entrySet()) {
             final String certId = renewal.getKey();
             final Key existingKey;
             try {
-                existingKey = dcm.getKey(certId, dcmPw);
+                existingKey = _dcm.getKey(certId, _dcmPw);
             } catch (final UnrecoverableKeyException e) {
                 throw new IOException("Unable to recover the private key for '" + certId + "' from DCM: " + e.getLocalizedMessage(), e);
             }
             final List<Certificate> chain = renewal.getValue();
-            dcm.setKeyEntry(certId, existingKey, dcmPw, chain.toArray(new Certificate[chain.size()]));
+            _dcm.setKeyEntry(certId, existingKey, _dcmPw, chain.toArray(new Certificate[chain.size()]));
         }
-        try (FileOutputStream fos = new FileOutputStream(dcmStore)) {
-            dcm.store(fos, dcmPw);
+        try (FileOutputStream fos = new FileOutputStream(_dcmStore)) {
+            _dcm.store(fos, _dcmPw);
         }
-
-        verifyRenewalApplied(_logger, dcmStore, dcmPw, renewals);
     }
 
     /**

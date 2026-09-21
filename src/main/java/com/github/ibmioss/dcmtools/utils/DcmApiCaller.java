@@ -17,6 +17,7 @@ import com.ibm.as400.access.AS400Structure;
 import com.ibm.as400.access.AS400Text;
 import com.ibm.as400.access.ErrorCodeParameter;
 import com.ibm.as400.access.ErrorCompletingRequestException;
+import com.ibm.as400.access.IFSFile;
 import com.ibm.as400.access.ObjectDoesNotExistException;
 import com.ibm.as400.access.ProgramCall;
 import com.ibm.as400.access.ProgramParameter;
@@ -119,6 +120,15 @@ public class DcmApiCaller implements Closeable {
      * *SYSTEM.
      */
     public void callQycdRenewCertificate_RNWC0300(final AppLogger _logger, final String _file) throws PropertyVetoException, AS400SecurityException, ErrorCompletingRequestException, IOException, InterruptedException, ObjectDoesNotExistException {
+        // The API's internal base64/certificate check (qycu_checkForBase64Certificate)
+        // rejects the file outright (CPF3CF2, "RC=79") if it isn't tagged CCSID 819 --
+        // confirmed by testing. A file written by PASE Java/openssl is CCSID 1208
+        // (UTF-8) by default, which fails that check even though the bytes are
+        // perfectly valid ASCII PEM.
+        final IFSFile ifsFile = new IFSFile(m_conn, _file);
+        if (!ifsFile.setCCSID(819)) {
+            _logger.println_warn("Could not set CCSID 819 on '" + _file + "'; QycdRenewCertificate is likely to reject it.");
+        }
         // Like the other QYCD* APIs (QycdUpdateCertUsage etc.), this is a service
         // program under QICSS, not a plain *PGM under QSYS -- confirmed against
         // /QSYS.LIB/QICSS.LIB/QYCDRNWC.SRVPGM on the actual box.
@@ -140,12 +150,16 @@ public class DcmApiCaller implements Closeable {
 
         // 1 Certificate request data Input Char(*)
         parameterList[0] = new ProgramParameter(arg0.toBytes(new Object[] { 8, _file.length(), _file }));
+        parameterList[0].setParameterType(ProgramParameter.PASS_BY_REFERENCE);
         // 2 Length of certificate request data Input Binary(4)
         parameterList[1] = new ProgramParameter(new AS400Bin4().toBytes(arg0.getByteLength()));
+        parameterList[1].setParameterType(ProgramParameter.PASS_BY_REFERENCE);
         // 3 Format name Input Char(8)
         parameterList[2] = new ProgramParameter(new AS400Text(8).toBytes(apiFormat));
+        parameterList[2].setParameterType(ProgramParameter.PASS_BY_REFERENCE);
         // 4 Error Code I/O Char(*)
         final ErrorCodeParameter ec = new ErrorCodeParameter(true, true);
+        ec.setParameterType(ProgramParameter.PASS_BY_REFERENCE);
         parameterList[3] = ec;
 
         program.setProgram(programName, parameterList);

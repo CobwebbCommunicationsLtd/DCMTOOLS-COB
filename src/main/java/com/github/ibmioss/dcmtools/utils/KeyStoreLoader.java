@@ -149,9 +149,15 @@ public class KeyStoreLoader {
                 }
             }
         }
-        // Out of ideas
-        if (!keyStore.aliases().hasMoreElements() && !isKeyStoreLoaded) {
-            throw new IOException("Failure loading certificates");
+        // Out of ideas. A keystore file that loaded and then yielded no entries is
+        // a failure too, not an empty input -- the previous condition let that case
+        // through, and it reached the caller as "No certificates to import", which
+        // reads as "your file had nothing new in it" and sent an investigation off
+        // in entirely the wrong direction.
+        if (!keyStore.aliases().hasMoreElements()) {
+            throw new IOException(isKeyStoreLoaded
+                    ? "A keystore file loaded successfully but no certificates survived processing. This is a bug, not an empty input file."
+                    : "Failure loading certificates");
         }
         _logger.println_verbose("Successfully loaded certificates");
         m_keyStore = keyStore;

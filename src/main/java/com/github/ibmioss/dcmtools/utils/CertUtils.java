@@ -128,19 +128,38 @@ public class CertUtils {
             if (alias.equals(newAlias)) {
                 continue;
             }
+            // Read the entry out in full BEFORE removing anything, and delete the
+            // old alias before writing the new one. Keystore aliases are
+            // case-insensitive in the IBM JCE provider, so where the requested
+            // label differs from the existing alias only by case -- e.g.
+            // 'dcmimport --cert=MY_CERT' against a file whose alias is 'my_cert'
+            // -- writing the new alias overwrites the same entry, and deleting
+            // the old one then deletes what was just written. That loses the
+            // certificate entirely, silently, and surfaces much later and much
+            // less helpfully as "No certificates to import".
+            Key key = null;
+            Certificate[] chain = null;
             if (_ks.isKeyEntry(alias)) {
                 try {
-                    final Key key = _ks.getKey(alias, _keyPassword);
-                    final Certificate[] chain = _ks.getCertificateChain(alias);
-                    if (key != null && chain != null) {
-                        _ks.setKeyEntry(newAlias, key, _keyPassword, chain);
-                        _ks.deleteEntry(alias);
-                        continue;
-                    }
-                } catch (final Exception e) { /* fall through */ }
+                    key = _ks.getKey(alias, _keyPassword);
+                    chain = _ks.getCertificateChain(alias);
+                } catch (final Exception e) {
+                    key = null;
+                    chain = null;
+                }
             }
-            _ks.setCertificateEntry(newAlias, _ks.getCertificate(alias));
+            final boolean hasKeyEntry = (null != key && null != chain);
+            final Certificate cert = hasKeyEntry ? null : _ks.getCertificate(alias);
+            if (!hasKeyEntry && null == cert) {
+                throw new KeyStoreException("Entry '" + alias + "' holds neither a usable key pair nor a certificate");
+            }
+
             _ks.deleteEntry(alias);
+            if (hasKeyEntry) {
+                _ks.setKeyEntry(newAlias, key, _keyPassword, chain);
+            } else {
+                _ks.setCertificateEntry(newAlias, cert);
+            }
         }
         return _ks;
     }

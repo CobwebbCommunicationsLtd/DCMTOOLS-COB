@@ -106,13 +106,24 @@ public class CertRenewer {
         // assigned before touching anything, so it can be restored afterward no
         // matter which renewal path actually runs.
         final Map<String, List<String>> assignedAppsByCertId = new LinkedHashMap<String, List<String>>();
+        // "No applications are assigned this certificate" and "I could not find out
+        // which applications are assigned this certificate" are entirely different
+        // facts, and an absent map entry used to represent both. Only one of them
+        // makes it safe to rewrite the store.
+        boolean assignmentSnapshotComplete = true;
         if (isSystemStore) {
-            for (final String certId : renewals.keySet()) {
-                try {
-                    assignedAppsByCertId.put(certId, CertUsageInfo.findApplicationsAssignedTo(certId));
-                } catch (final Exception e) {
-                    _logger.println_warn("Could not look up existing certificate-application assignments for '" + certId + "', so they cannot be restored after renewal: " + e.getLocalizedMessage());
+            try (DcmApiCaller apiCaller = new DcmApiCaller(isYesMode)) {
+                for (final String certId : renewals.keySet()) {
+                    try {
+                        assignedAppsByCertId.put(certId, CertUsageInfo.findApplicationsAssignedTo(_logger, apiCaller, certId));
+                    } catch (final Exception e) {
+                        assignmentSnapshotComplete = false;
+                        _logger.println_warn("Could not look up existing certificate-application assignments for '" + certId + "', so they cannot be restored after renewal: " + e.getLocalizedMessage());
+                    }
                 }
+            } catch (final Exception e) {
+                assignmentSnapshotComplete = false;
+                _logger.println_warn("Could not look up existing certificate-application assignments, so they cannot be restored after renewal: " + e.getLocalizedMessage());
             }
         }
 
@@ -131,6 +142,19 @@ public class CertRenewer {
             }
         }
         if (!renewedNatively) {
+            if (isSystemStore && !assignmentSnapshotComplete) {
+                // The fallback below clears certificate-application assignments as a
+                // side effect of rewriting the store. That is survivable only because
+                // we put them back afterward -- and we cannot put back what we never
+                // managed to read. Proceeding here is how a machine ends up with every
+                // host server refusing SSL while the ports stay open and nothing is
+                // written to QSYSOPR, which is a genuinely hard fault to diagnose.
+                throw new IOException("Refusing to renew " + renewals.keySet() + "."
+                        + " Native renewal failed, and the certificate-application assignments could not be read"
+                        + " beforehand -- so falling back to the keystore rewrite would clear them with nothing to"
+                        + " restore from. Renew through the DCM web interface instead, or fix the lookup above"
+                        + " (QycdRetrieveCertUsageInfo, falling back to QSYS2.CERTIFICATE_USAGE_INFO) and retry.");
+            }
             if (isSystemStore) {
                 _logger.println_warn("WARNING: renewing *SYSTEM via KeyStore.store() can orphan certificate-application assignments and/or the password stash; known assignments will be re-applied afterward.");
             } else {

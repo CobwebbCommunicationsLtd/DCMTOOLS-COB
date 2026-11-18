@@ -27,6 +27,14 @@ import com.ibm.as400.access.ErrorCompletingRequestException;
 import com.ibm.as400.access.ObjectDoesNotExistException;
 
 public class CertFileImporter {
+    public static class AlreadyInDcmException extends IOException {
+        private static final long serialVersionUID = 1L;
+
+        public AlreadyInDcmException() {
+            super("Nothing to import: every certificate is already in DCM");
+        }
+    }
+
     public static class ImportOptions extends DcmUserOpts {
         private boolean isCasOnly = false;
         private boolean isPasswordProtected = false;
@@ -96,6 +104,7 @@ public class CertFileImporter {
         _logger.println_success("Sanity check successful");
 
         final KeyStoreInterrogator dcmChecker = _tracker.getStartingSnapshot();
+        final List<String> aliasesBefore = Collections.list(keyStore.aliases());
 
         // Check for conflicting aliases, where the certificate is already in the store under a different alias
         for (final String alias : Collections.list(keyStore.aliases())) {
@@ -107,16 +116,36 @@ public class CertFileImporter {
                 keyStore.deleteEntry(alias);
             }
         }
+        final boolean isAnyAlreadyInDcm = !Collections.list(keyStore.aliases()).containsAll(aliasesBefore);
         // check for the case where the alias already exists and we might overwrite it on import
         for (final String alias : Collections.list(keyStore.aliases())) {
             _logger.println("checking cert at alias " + alias);
             final Certificate cert = keyStore.getCertificate(alias);
             final Certificate preExistingCert = dcmChecker.getKeyStore().getCertificate(alias);
-            if (null != preExistingCert) {
-                _logger.println(StringUtils.colorizeForTerminal("WARNING: The following already exists with certificate id '" + alias + "' and will not be imported. Perhaps you mean to use the 'dcmrenew' tool instead?:\n" + CertUtils.getCertInfoStr(preExistingCert, "    "), TerminalColor.YELLOW));
+            if (null == preExistingCert) {
+                continue;
             }
+            // A CA certificate whose label is taken by a different certificate -- a
+            // cross-signed root beside the self-signed one, say -- is imported under
+            // the next free label. DCM refuses the import outright otherwise.
+            if (keyStore.isCertificateEntry(alias)) {
+                String newAlias = alias;
+                for (int i = 2; dcmChecker.getKeyStore().containsAlias(newAlias) || keyStore.containsAlias(newAlias); i++) {
+                    newAlias = alias + "." + i;
+                }
+                keyStore.deleteEntry(alias);
+                keyStore.setCertificateEntry(newAlias, cert);
+                _logger.println_warn("WARNING: Certificate ID '" + alias + "' is already used in DCM by a different certificate. Importing as '" + newAlias + "' instead");
+                continue;
+            }
+            _logger.println(StringUtils.colorizeForTerminal("WARNING: The following already exists with certificate id '" + alias + "' and will not be imported. Perhaps you mean to use the 'dcmrenew' tool instead?:\n" + CertUtils.getCertInfoStr(preExistingCert, "    "), TerminalColor.YELLOW));
         }
         if (!keyStore.aliases().hasMoreElements()) {
+            // Everything asked for is in DCM already -- the usual outcome when a
+            // renewal re-imports the same chain -- which is not a failure.
+            if (isAnyAlreadyInDcm) {
+                throw new AlreadyInDcmException();
+            }
             throw new IOException("No certificates to import");
         }
         // Ask user confirmation

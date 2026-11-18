@@ -134,7 +134,12 @@ public class DcmImportCmd {
 
             final DcmChangeTracker dcmTracker = new DcmChangeTracker(logger, opts);
             final CertFileImporter off = new CertFileImporter(logger, files);
-            off.doImport(logger, opts, dcmTracker);
+            try {
+                off.doImport(logger, opts, dcmTracker);
+            } catch (final CertFileImporter.AlreadyInDcmException e) {
+                logger.println_success(e.getLocalizedMessage());
+                return;
+            }
             //@formatter:off
             String noChangesResolution = "This failure may be due to not having imported the necessary root certificate(s). \n" + 
                     "You can try running the following commands to import the Mozilla certificates bundle,\n" + 

@@ -125,6 +125,15 @@ public class KeyStoreLoader {
                                 nonCaSkipped++;
                                 continue;
                             }
+                            // A CA certificate is labelled by its subject, as DCM labels
+                            // them itself. Labelling it after the file meant every
+                            // intermediate from an acme.sh ca.cer became 'ca', so the
+                            // first one imported blocked every later one.
+                            if (StringUtils.isEmpty(_label) && isCertCa(cert)) {
+                                keyStore.setCertificateEntry(uniqueAlias(keyStore, subjectLabel(cert)), cert);
+                                isFileLoaded = true;
+                                continue;
+                            }
                             final String aliasBase = StringUtils.isEmpty(_label) ? fileObj.getName().replaceFirst("[.][^.]+$", "") : _label.trim();
                             final String aliasSuffix = (1 == counter) ? "" : "." + counter;
                             counter++;
@@ -172,6 +181,20 @@ public class KeyStoreLoader {
             return ((X509Certificate) cert).getBasicConstraints() != -1;
         }
         return false;
+    }
+
+    // DCM's own form, e.g. "cn=yr2,o=let's encrypt,c=us"
+    private static String subjectLabel(final Certificate _cert) {
+        return ((X509Certificate) _cert).getSubjectX500Principal().getName().toLowerCase();
+    }
+
+    // _base, or _base.2, _base.3, ... -- whichever is not already used in _ks
+    public static String uniqueAlias(final KeyStore _ks, final String _base) throws KeyStoreException {
+        String alias = _base;
+        for (int i = 2; _ks.containsAlias(alias); i++) {
+            alias = _base + "." + i;
+        }
+        return alias;
     }
 
     public String saveToDcmApiFormatFile(final String _pw) throws IOException, KeyStoreException, NoSuchAlgorithmException, CertificateException {

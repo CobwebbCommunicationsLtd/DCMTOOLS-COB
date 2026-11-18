@@ -2,6 +2,7 @@ package com.github.ibmioss.dcmtools.utils;
 
 import java.beans.PropertyVetoException;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
@@ -23,8 +24,25 @@ public class KeyStoreInterrogator {
     public static KeyStoreInterrogator getFromDCM(final AppLogger _logger, final boolean _isYesMode, final String _dcmStore, final String _dcmStorePw)
             throws IOException, PropertyVetoException, AS400SecurityException, ErrorCompletingRequestException, InterruptedException, ObjectDoesNotExistException, KeyStoreException, NoSuchAlgorithmException, CertificateException {
         final File tmpFile = CertUtils.exportDcmStore(_logger, _isYesMode, _dcmStore, _dcmStorePw, null, null);
-        final KeyStoreLoader loader = new KeyStoreLoader(_logger, Arrays.asList(tmpFile.getAbsolutePath()), TempFileManager.TEMP_KEYSTORE_PWD, null, false);
-        return new KeyStoreInterrogator(loader.getKeyStore());
+        try {
+            final KeyStoreLoader loader = new KeyStoreLoader(_logger, Arrays.asList(tmpFile.getAbsolutePath()), TempFileManager.TEMP_KEYSTORE_PWD, null, false);
+            return new KeyStoreInterrogator(loader.getKeyStore());
+        } catch (final IOException e) {
+            // A store with nothing in it yet (one just made by dcmcreate) exports as an
+            // empty PKCS12, which KeyStoreLoader rejects as it would an empty input
+            // file. Here that only means there is nothing in DCM to compare against,
+            // so accept it -- but only if the export really is a valid, empty store.
+            final KeyStore exported = KeyStore.getInstance("PKCS12");
+            try (FileInputStream fis = new FileInputStream(tmpFile)) {
+                exported.load(fis, TempFileManager.TEMP_KEYSTORE_PWD.toCharArray());
+            } catch (final Exception notEmptyStore) {
+                throw e;
+            }
+            if (0 == exported.size()) {
+                return new KeyStoreInterrogator(exported);
+            }
+            throw e;
+        }
     }
 
     private final KeyStore m_keyStore;
